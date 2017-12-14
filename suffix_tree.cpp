@@ -15,14 +15,23 @@ const double eps = 1.0;
 
 struct aux_info {
     int leaves;
+    int nodes;
     int rank;
     int depth;
+    int rdepth;
     int component_id;
+    int giraffe_id;
 
-    aux_info (int depth = 0, int leaves = 0): leaves(leaves), rank(0), depth(depth), component_id(-1) {}
+    aux_info (int depth = 0, int rdepth = 0, int leaves = 0): leaves(leaves), rank(0), depth(depth), rdepth(rdepth), nodes(1), component_id(-1), giraffe_id(-1) {}
 };
 
 struct layer {};
+
+struct giraffe_tree {
+    vector<struct node*>nodes;
+    int id;
+    giraffe_tree(int id): id(id) {}
+};
 
 struct component {
     struct node * root;
@@ -174,18 +183,26 @@ public:
             post(v);
     }
 
+    vector<struct node *> leaves;
     void calc_aux() {
         this->dfs(this->root,
-                  [](struct node *v) {
+                  [&](struct node *v) {
                       if (!v->info) {
                           v->info = new aux_info();
-                          v->info->leaves = v->next.empty() ? 1 : 0;
+
+                          if (v->next.empty()) {
+                              v->info->leaves = 1;
+                              leaves.push_back(v);
+                          } else {
+                              v->info->leaves = 0;
+                          }
                       }
                   },
                   NULL,
                   NULL,
                   [](struct node *v, char ch, struct node *child) {
                       v->info->leaves += child->info->leaves;
+                      v->info->nodes += child->info->nodes;
                   },
                   [](struct node *v) {
                       v->info->rank = (int)ceil(log2(v->info->leaves));
@@ -195,11 +212,43 @@ public:
                   NULL,
                   [](struct node *v, char ch, struct node *child) {
                       child->info->depth = v->info->depth + child->len();
+                      child->info->rdepth = v->info->rdepth + 1;
                   },
                   NULL,
                   NULL,
                   NULL
                   );
+
+        vector<struct giraffe_tree*>giraffes;
+        for (int i = 0; i < leaves.size(); i++) {
+            struct node * leave = leaves[i];
+            if (leave->info->giraffe_id != -1)
+                continue;
+            int id = giraffes.size();
+            struct giraffe_tree * t = new giraffe_tree(id);
+            giraffes.push_back(t);
+            leave->info->giraffe_id = id;
+
+            struct node * v = leave;
+            while (v != root) {
+                if (v->info->rdepth * 2 >= v->info->nodes)
+                    break;
+
+                v = v->parent;
+            }
+
+            this->dfs(v,
+                [&](struct node *v) {
+                          v->info->giraffe_id = id;
+                          t->nodes.push_back(v);
+                      }, NULL, NULL, NULL, NULL);
+
+            v = v->parent;
+            while (v != NULL) {
+                t->nodes.push_back(v);
+                v = v->parent;
+            }
+        }
 
         vector<component> components;
         this->dfs(this->root,
